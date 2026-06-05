@@ -23,9 +23,18 @@ def main():
     for cache_dir in possible_dirs:
         print(f"Buscando en: {cache_dir}...")
         if cache_dir.exists():
-            # Search recursively for query engine binaries
-            for path in cache_dir.glob("**/prisma-query-engine-*"):
-                dest = Path(".") / path.name
+            # Search recursively for query engine binaries (both with and without prisma- prefix)
+            # We look for files starting with 'query-engine-' or 'prisma-query-engine-'
+            engine_files = list(cache_dir.glob("**/query-engine-*")) + list(cache_dir.glob("**/prisma-query-engine-*"))
+            for path in engine_files:
+                # Ensure the destination file in the project root starts with 'prisma-query-engine-'
+                name = path.name
+                if not name.startswith("prisma-"):
+                    dest_name = f"prisma-{name}"
+                else:
+                    dest_name = name
+                
+                dest = Path(".") / dest_name
                 print(f"✅ Encontrado: {path}")
                 print(f"-> Copiando a: {dest.resolve()}")
                 
@@ -34,8 +43,8 @@ def main():
                 os.chmod(dest, 0o755)
                 found = True
             
-            # Search recursively for migration engine or formatting binaries if needed
-            for path in cache_dir.glob("**/migration-engine-*"):
+            # Also copy schema/migration engines if present
+            for path in cache_dir.glob("**/schema-engine-*"):
                 dest = Path(".") / path.name
                 shutil.copy(path, dest)
                 os.chmod(dest, 0o755)
