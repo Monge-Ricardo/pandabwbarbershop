@@ -3,8 +3,8 @@ services:
     name: pandabwbarbershop-backend
     runtime: python
     # Render will automatically use Python 3.11+
-    # We must run prisma py fetch & generate during build so the binaries compile for Render's Linux environment
-    buildCommand: pip install -r requirements.txt && prisma py fetch && prisma generate
+    # We must run our copy_binaries script during build to copy query engines to the project root
+    buildCommand: pip install -r requirements.txt && python copy_binaries.py && prisma generate
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PRISMA_BINARY_CACHE_DIR
