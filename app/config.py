@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     DIRECT_URL: str
     SUPABASE_URL: str
     SUPABASE_ANON_KEY: str
-    PORT: int = 8000
+    PORT: int = 3000
 
     # Pydantic v2 configuration to read from .env
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

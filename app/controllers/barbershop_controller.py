@@ -2,11 +2,11 @@ import uuid
 import random
 import string
 from fastapi import APIRouter, HTTPException, status
-from typing import List
+from typing import List, Optional
 from app.database import db
 from app.models.schemas.barbershop_schema import BarbershopCreate, BarbershopUpdate, BarbershopResponse
 
-router = APIRouter(prefix="/barbershops", tags=["Barbershops"])
+router = APIRouter(prefix="/barbershops", tags=["Barbershops CRUD"])
 
 def generate_invite_code() -> str:
     """Generates a random invite code like SH-123-XYZ."""
@@ -14,17 +14,22 @@ def generate_invite_code() -> str:
     return f"SH-{chars[:3]}-{chars[3:]}"
 
 @router.get("", response_model=List[BarbershopResponse])
-async def list_barbershops():
+async def list_barbershops(slug: Optional[str] = None, invite_code: Optional[str] = None):
     """
-    Obtiene la lista de todas las barberías registradas en la plataforma.
+    Lista todas las barberías, permitiendo filtrar opcionalmente por slug o invite_code.
     """
-    barbershops = await db.barbershops.find_many()
-    return barbershops
+    if slug:
+        shops = await db.barbershops.find_many(where={"slug": slug})
+    elif invite_code:
+        shops = await db.barbershops.find_many(where={"invite_code": invite_code})
+    else:
+        shops = await db.barbershops.find_many()
+    return shops
 
 @router.get("/{shop_id}", response_model=BarbershopResponse)
 async def get_barbershop(shop_id: str):
     """
-    Obtiene la información detallada de una barbería específica.
+    Obtiene los detalles de una barbería por su ID.
     """
     shop = await db.barbershops.find_unique(where={"id": shop_id})
     if not shop:
@@ -34,17 +39,29 @@ async def get_barbershop(shop_id: str):
         )
     return shop
 
+@router.get("/slug/{slug}", response_model=BarbershopResponse)
+async def get_barbershop_by_slug(slug: str):
+    """
+    Obtiene los detalles de una barbería por su slug.
+    """
+    shop = await db.barbershops.find_unique(where={"slug": slug})
+    if not shop:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Barbería no encontrada por slug."
+        )
+    return shop
+
 @router.post("", response_model=BarbershopResponse, status_code=status.HTTP_201_CREATED)
 async def create_barbershop(body: BarbershopCreate):
     """
-    Registra una nueva barbería en la plataforma. Genera automáticamente un código de invitación único.
+    Registra una nueva barbería directamente en la base de datos.
     """
-    # Verify if slug is unique
     existing_shop = await db.barbershops.find_unique(where={"slug": body.slug})
     if existing_shop:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El slug de la barbería ya está en uso. Pruebe con otro."
+            detail="El slug de la barbería ya está en uso."
         )
 
     invite_code = generate_invite_code()
@@ -68,7 +85,7 @@ async def create_barbershop(body: BarbershopCreate):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al crear la barbería: {str(e)}"
+            detail=f"Error al crear la barbería en BD: {str(e)}"
         )
 
 @router.put("/{shop_id}", response_model=BarbershopResponse)
@@ -96,13 +113,13 @@ async def update_barbershop(shop_id: str, body: BarbershopUpdate):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al actualizar la barbería: {str(e)}"
+            detail=f"Error al actualizar la barbería en BD: {str(e)}"
         )
 
 @router.delete("/{shop_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_barbershop(shop_id: str):
     """
-    Elimina una barbería de la plataforma.
+    Elimina una barbería de la base de datos.
     """
     shop = await db.barbershops.find_unique(where={"id": shop_id})
     if not shop:
@@ -117,5 +134,5 @@ async def delete_barbershop(shop_id: str):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al eliminar la barbería: {str(e)}"
+            detail=f"Error al eliminar la barbería de la BD: {str(e)}"
         )

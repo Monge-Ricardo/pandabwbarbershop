@@ -1,24 +1,47 @@
 import uuid
 from fastapi import APIRouter, HTTPException, status
-from typing import List
+from typing import List, Optional
 from datetime import datetime, date, time
 from app.database import db
 from app.models.schemas.appointment_schema import AppointmentCreate, AppointmentUpdate, AppointmentResponse
 
-router = APIRouter(prefix="/appointments", tags=["Appointments"])
+router = APIRouter(prefix="/appointments", tags=["Appointments CRUD"])
 
 @router.get("", response_model=List[AppointmentResponse])
-async def list_appointments():
+async def list_appointments(
+    barbershop_id: Optional[str] = None,
+    client_id: Optional[str] = None,
+    barber_id: Optional[str] = None,
+    appointment_date: Optional[str] = None  # Format: YYYY-MM-DD
+):
     """
-    Obtiene todas las citas registradas en el sistema.
+    Lista todas las citas de la base de datos, permitiendo filtrar por barbershop_id, client_id, barber_id y fecha.
     """
-    appointments = await db.appointments.find_many()
+    where_filter = {}
+    if barbershop_id:
+        where_filter["barbershop_id"] = barbershop_id
+    if client_id:
+        where_filter["client_id"] = client_id
+    if barber_id:
+        where_filter["barber_id"] = barber_id
+    if appointment_date:
+        try:
+            # Parse date and combine with min time to create datetime for database query
+            parsed_date = datetime.combine(datetime.strptime(appointment_date, "%Y-%m-%d").date(), datetime.min.time())
+            where_filter["appointment_date"] = parsed_date
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Formato de fecha inválido. Use YYYY-MM-DD."
+            )
+
+    appointments = await db.appointments.find_many(where=where_filter)
     return appointments
 
 @router.get("/{appointment_id}", response_model=AppointmentResponse)
 async def get_appointment(appointment_id: str):
     """
-    Obtiene los detalles de una cita específica.
+    Obtiene los detalles de una cita por su ID.
     """
     appointment = await db.appointments.find_unique(where={"id": appointment_id})
     if not appointment:
@@ -31,37 +54,9 @@ async def get_appointment(appointment_id: str):
 @router.post("", response_model=AppointmentResponse, status_code=status.HTTP_201_CREATED)
 async def create_appointment(body: AppointmentCreate):
     """
-    Crea una nueva cita (reserva).
+    Crea una nueva cita (reserva) directamente en la base de datos.
     """
-    # 1. Verify barbershop exists
-    shop = await db.barbershops.find_unique(where={"id": body.barbershop_id})
-    if not shop:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="La barbería seleccionada no existe."
-        )
-
-    # 2. Verify client exists
-    client = await db.public_users.find_unique(where={"id": body.client_id})
-    if not client:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="El cliente especificado no existe."
-        )
-
-    # 3. Verify barber exists
-    barber = await db.public_users.find_unique(where={"id": body.barber_id})
-    if not barber:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="El barbero especificado no existe."
-        )
-
     try:
-        # Convert date and time fields into Python datetime objects to store in PostgreSQL.
-        # Prisma Python expects python datetime objects.
-        # date is converted to datetime at midnight.
-        # time is stored as datetime at minimum date.
         date_dt = datetime.combine(body.appointment_date, datetime.min.time())
         start_dt = datetime.combine(date.min, body.start_time)
         end_dt = datetime.combine(date.min, body.end_time)
@@ -76,21 +71,20 @@ async def create_appointment(body: AppointmentCreate):
                 "start_time": start_dt,
                 "end_time": end_dt,
                 "status": "pending",
-                "notes": body.notes,
-                "created_at": datetime.now()
+                "notes": body.notes
             }
         )
         return new_appointment
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al agendar la cita: {str(e)}"
+            detail=f"Error al agendar la cita en BD: {str(e)}"
         )
 
 @router.put("/{appointment_id}", response_model=AppointmentResponse)
 async def update_appointment(appointment_id: str, body: AppointmentUpdate):
     """
-    Modifica una cita existente (reprogramar, cambiar estado o notas).
+    Actualiza una cita existente en la base de datos.
     """
     appointment = await db.appointments.find_unique(where={"id": appointment_id})
     if not appointment:
@@ -115,21 +109,21 @@ async def update_appointment(appointment_id: str, body: AppointmentUpdate):
         return appointment
 
     try:
-        updated_appointment = await db.appointments.update(
+        updated = await db.appointments.update(
             where={"id": appointment_id},
             data=update_data
         )
-        return updated_appointment
+        return updated
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al actualizar la cita: {str(e)}"
+            detail=f"Error al actualizar la cita en BD: {str(e)}"
         )
 
 @router.delete("/{appointment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_appointment(appointment_id: str):
     """
-    Cancela/elimina una cita del sistema.
+    Elimina una cita de la base de datos.
     """
     appointment = await db.appointments.find_unique(where={"id": appointment_id})
     if not appointment:
@@ -144,5 +138,5 @@ async def delete_appointment(appointment_id: str):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al eliminar la cita: {str(e)}"
+            detail=f"Error al eliminar la cita de la BD: {str(e)}"
         )

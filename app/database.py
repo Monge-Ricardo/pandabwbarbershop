@@ -5,12 +5,7 @@ from app.config import settings
 logger = logging.getLogger("uvicorn")
 
 # Initialize Prisma Client with programmatic database URL injection
-db = Prisma(
-    datasource={
-        "url": settings.DATABASE_URL
-    },
-    auto_register=True
-)
+db = Prisma(auto_register=True)
 
 async def connect_db():
     if not db.is_connected():
